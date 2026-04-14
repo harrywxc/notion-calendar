@@ -7,13 +7,17 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional, List
 import pytz
+import httpx
 
-from notion_client import AsyncClient
 from icalendar import Calendar, Event, Timezone, TimezoneStandard
 
 # 从环境变量读取配置
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
+
+# Notion API 配置
+NOTION_API_BASE = "https://api.notion.com/v1"
+NOTION_VERSION = "2022-06-28"
 
 # 时区配置
 TIMEZONE = "Asia/Shanghai"
@@ -48,21 +52,34 @@ async def fetch_notion_events() -> List[dict]:
     try:
         print(f"[{datetime.now()}] 正在获取 Notion 数据...")
 
-        client = AsyncClient(auth=NOTION_TOKEN)
+        headers = {
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": NOTION_VERSION,
+            "Content-Type": "application/json"
+        }
 
         results = []
         has_more = True
         start_cursor = None
 
-        while has_more:
-            response = await client.databases.query(
-                database_id=NOTION_DATABASE_ID,
-                start_cursor=start_cursor,
-                page_size=100
-            )
-            results.extend(response.get("results", []))
-            has_more = response.get("has_more", False)
-            start_cursor = response.get("next_cursor")
+        async with httpx.AsyncClient() as client:
+            while has_more:
+                payload = {"page_size": 100}
+                if start_cursor:
+                    payload["start_cursor"] = start_cursor
+
+                response = await client.post(
+                    f"{NOTION_API_BASE}/databases/{NOTION_DATABASE_ID}/query",
+                    headers=headers,
+                    json=payload,
+                    timeout=30.0
+                )
+                response.raise_for_status()
+                data = response.json()
+
+                results.extend(data.get("results", []))
+                has_more = data.get("has_more", False)
+                start_cursor = data.get("next_cursor")
 
         print(f"[{datetime.now()}] 获取到 {len(results)} 条日程")
         return results
@@ -170,53 +187,4 @@ def generate_ics_content(events: List[dict]) -> str:
         if event.get("description"):
             vevent.add('description', event["description"])
         if event.get("location"):
-            vevent.add('location', event["location"])
-
-        # 添加创建时间和更新时间
-        now = datetime.now(pytz.UTC)
-        vevent.add('created', now)
-        vevent.add('dtstamp', now)
-
-        calendar.add_component(vevent)
-
-    return calendar.to_ical().decode('utf-8')
-
-
-async def main():
-    """主函数"""
-    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
-        print("错误：缺少 NOTION_TOKEN 或 NOTION_DATABASE_ID 环境变量")
-        return
-
-    pages = await fetch_notion_events()
-
-    events = []
-    for page in pages:
-        event = extract_event_info(page)
-        if event:
-            events.append(event)
-
-    # 过滤时间范围：过去2周到未来2周
-    now = datetime.now(tz)
-    start_date = now - timedelta(weeks=2)
-    end_date = now + timedelta(weeks=2)
-
-    filtered_events = []
-    for event in events:
-        if event.get("start"):
-            event_start = event["start"]
-            if start_date <= event_start <= end_date:
-                filtered_events.append(event)
-
-    ics_content = generate_ics_content(filtered_events)
-
-    output_file = "calendar.ics"
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(ics_content)
-
-    print(f"[{datetime.now()}] 已生成 {output_file}，包含 {len(filtered_events)} 个事件（范围：过去2周到未来2周，总计{len(events)}条）")
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+            vevent.add('locat
