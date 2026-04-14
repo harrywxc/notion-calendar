@@ -83,14 +83,19 @@ def extract_event_info(page: dict) -> Optional[dict]:
                 break
     if not title:
         title = page.get("id", "未命名事件")[:8]
-    event_date = None
+    event_start = None
+    event_end = None
     for name in ["Date", "日期", "日期范围", "Time", "时间"]:
         if name in props:
             date_prop = props[name]
             if date_prop.get("type") == "date":
-                event_date = parse_notion_date(date_prop.get("date"))
-                if event_date:
-                    break
+                date_value = date_prop.get("date")
+                if date_value:
+                    event_start = parse_notion_date({"start": date_value.get("start")})
+                    if date_value.get("end"):
+                        event_end = parse_notion_date({"start": date_value.get("end")})
+                    if event_start:
+                        break
     description = ""
     for name in ["Description", "描述", "Notes", "备注"]:
         if name in props:
@@ -108,7 +113,8 @@ def extract_event_info(page: dict) -> Optional[dict]:
     return {
         "uid": f"{page['id']}@notion-calendar",
         "title": title,
-        "start": event_date,
+        "start": event_start,
+        "end": event_end,
         "description": description,
         "location": location,
         "url": page.get("url", "")
@@ -141,7 +147,10 @@ def generate_ics_content(events: List[dict]) -> str:
         vevent.add('uid', event["uid"])
         vevent.add('summary', event["title"])
         vevent.add('dtstart', notion_datetime_to_ics_datetime(event["start"]))
-        end_time = event["start"] + timedelta(hours=1)
+        if event.get("end"):
+            end_time = event["end"]
+        else:
+            end_time = event["start"] + timedelta(hours=1)
         vevent.add('dtend', notion_datetime_to_ics_datetime(end_time))
         if event.get("description"):
             vevent.add('description', event["description"])
