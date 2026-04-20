@@ -104,7 +104,7 @@ def extract_event_info(page: dict) -> Optional[dict]:
                 description = "".join([t.get("plain_text", "") for t in desc_prop.get("rich_text", [])])
                 break
     location = ""
-    for name in ["Location", "地点", "Where"]:
+    for name in ["Location", "地点", "Where", "会议室"]:
         if name in props:
             loc_prop = props[name]
             if loc_prop.get("type") == "rich_text":
