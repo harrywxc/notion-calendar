@@ -53,11 +53,11 @@ async def fetch_notion_events() -> List[dict]:
         start_cursor = None
         async with httpx.AsyncClient() as client:
             while has_more:
-                payload = {"page_size": 100}
+                payload = {"filter": {"property": "object", "value": "page"}, "page_size": 100}
                 if start_cursor:
                     payload["start_cursor"] = start_cursor
                 response = await client.post(
-                    f"{NOTION_API_BASE}/databases/{NOTION_DATABASE_ID}/query",
+                    f"{NOTION_API_BASE}/search",
                     headers=headers,
                     json=payload,
                     timeout=30.0
@@ -72,6 +72,7 @@ async def fetch_notion_events() -> List[dict]:
     except Exception as e:
         print(f"[{datetime.now()}] 获取 Notion 数据失败: {e}")
         return []
+
 def extract_event_info(page: dict) -> Optional[dict]:
     props = page.get("properties", {})
     title = ""
@@ -131,6 +132,7 @@ def create_timezone() -> Timezone:
     tz_standard.add('TZNAME', 'CST')
     tz_component.add_component(tz_standard)
     return tz_component
+
 def generate_ics_content(events: List[dict]) -> str:
     calendar = Calendar()
     calendar.add('prodid', '-//Notion Calendar Sync//MX//')
@@ -173,15 +175,18 @@ async def main():
         event = extract_event_info(page)
         if event:
             events.append(event)
+    
     now = datetime.now(tz)
     start_date = now - timedelta(weeks=2)
     end_date = now + timedelta(weeks=2)
+    
     filtered_events = []
     for event in events:
         if event.get("start"):
             event_start = event["start"]
             if start_date <= event_start <= end_date:
                 filtered_events.append(event)
+    
     ics_content = generate_ics_content(filtered_events)
     output_file = "calendar.ics"
     with open(output_file, 'w', encoding='utf-8') as f:
