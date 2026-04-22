@@ -2,7 +2,7 @@ name: Update Notion Calendar
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/20 * * * *'
   workflow_dispatch:
 
 permissions:
