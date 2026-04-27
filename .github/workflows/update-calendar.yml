@@ -13,14 +13,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fetch latest calendar
-        run: curl -sL "https://harrywxc.github.io/notion-calendar/calendar.ics" -o calendar.ics
-      - name: Commit and push
+          python-version: '3.11'
+      - run: pip install httpx icalendar pytz
+      - name: Generate ICS
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: python generate_ics.py
+      - name: Push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add calendar.ics
-          git diff --staged --quiet || git commit -m "Update calendar $(date -u)"
+          git diff --staged --quiet || git commit -m "Update $(date -u)"
           git push
