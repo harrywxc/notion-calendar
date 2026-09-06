@@ -2,7 +2,9 @@ name: Update Calendar
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # 避开整点高峰(:00 是 GitHub Actions 高负载时段,schedule 事件易被延迟/跳过)
+    # 每 20 分钟错峰触发,偶发跳过影响 ≤ 40 分钟
+    - cron: '7,27,47 * * * *'
   workflow_dispatch:
 
 permissions:
