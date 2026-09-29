@@ -19,7 +19,7 @@ from typing import Optional, List
 import pytz
 import httpx
 
-from icalendar import Calendar, Event, Timezone, TimezoneStandard
+from icalendar import Calendar, Event, Timezone, TimezoneStandard, Alarm
 
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
@@ -204,6 +204,21 @@ def generate_ics_content(events: List[dict]) -> str:
             vevent.add('description', event["description"])
         if event.get("location"):
             vevent.add('location', event["location"])
+        # ── 提醒（VALARM）：iOS 的“出发时间”按步行导航估算，与开车不符；
+        #    这里按地点性质给固定提前量兜底（跨市 90min / 市区会议室 45min / 其余 30min）
+        if not event.get("is_all_day"):
+            loc_txt = (event.get("location") or "") + " " + (event.get("summary") or "")
+            if any(k in loc_txt for k in ('昆山', '太仓', '常熟', '张家港', '吴江', '上海', '无锡', '外地', '出差')):
+                mins = 90
+            elif any(k in loc_txt for k in ('能源大厦', '会议室', '大厦', '中心', '园区', '科技')):
+                mins = 45
+            else:
+                mins = 30
+            alarm = Alarm()
+            alarm.add('trigger', timedelta(minutes=-mins))
+            alarm.add('action', 'DISPLAY')
+            alarm.add('description', event.get("summary") or "日程提醒")
+            vevent.add_component(alarm)
         now = datetime.now(pytz.UTC)
         vevent.add('created', now)
         vevent.add('dtstamp', now)
