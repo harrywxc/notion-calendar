@@ -39,6 +39,9 @@ PROP_DESC = [s.strip() for s in os.environ.get(
     "NOTION_PROP_DESC", "描述,Description,备注,Notes").split(",") if s.strip()]
 PROP_LOC = [s.strip() for s in os.environ.get(
     "NOTION_PROP_LOC", "会议室,地点,Location,Where").split(",") if s.strip()]
+# 2026-10-15：参会人员（multi_select）拼进 DESCRIPTION，让订阅日历里也能看到谁参会
+PROP_PEOPLE = [s.strip() for s in os.environ.get(
+    "NOTION_PROP_PEOPLE", "人员,参会人员,参会人,People,Attendees").split(",") if s.strip()]
 
 
 def parse_notion_date(date_value: dict) -> tuple:
@@ -148,6 +151,20 @@ def extract_event_info(page: dict) -> Optional[dict]:
         elif lt == "multi_select":
             location = "、".join([o.get("name", "") for o in loc_prop.get("multi_select", [])])
 
+    # 参会人员（multi_select / rich_text / people 兼容），拼进描述
+    people = ""
+    ppl_prop = _first_prop(props, PROP_PEOPLE)
+    if ppl_prop:
+        pt = ppl_prop.get("type")
+        if pt == "multi_select":
+            people = "、".join(o.get("name", "") for o in ppl_prop.get("multi_select", []))
+        elif pt == "rich_text":
+            people = "".join(t.get("plain_text", "") for t in ppl_prop.get("rich_text", []))
+        elif pt == "people":
+            people = "、".join(p.get("name", "") for p in ppl_prop.get("people", []))
+        elif pt in ("select", "status") and ppl_prop.get(pt):
+            people = ppl_prop[pt].get("name", "")
+
     return {
         "uid": f"{page['id']}@notion-calendar",
         "title": title,
@@ -155,6 +172,7 @@ def extract_event_info(page: dict) -> Optional[dict]:
         "end": event_end,
         "is_all_day": is_all_day,
         "description": description,
+        "people": people,
         "location": location,
         "url": page.get("url", ""),
     }
@@ -200,8 +218,16 @@ def generate_ics_content(events: List[dict]) -> str:
             else:
                 end_time = event["start"] + timedelta(hours=1)
             vevent.add('dtend', notion_datetime_to_ics_datetime(end_time))
+        # 描述：把「参会人员」放在最前面（日历里一眼能看到谁参会），再接原描述
+        desc_parts = []
+        if event.get("people"):
+            desc_parts.append(f"参会人员：{event['people']}")
         if event.get("description"):
-            vevent.add('description', event["description"])
+            desc_parts.append(event["description"])
+        if event.get("location"):
+            desc_parts.append(f"地点：{event['location']}")
+        if desc_parts:
+            vevent.add('description', "\n".join(desc_parts))
         if event.get("location"):
             vevent.add('location', event["location"])
         # ── 提醒（VALARM）：iOS 的“出发时间”按步行导航估算，与开车不符；
