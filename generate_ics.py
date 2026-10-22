@@ -14,6 +14,8 @@
 """
 
 import os
+import json
+import hashlib
 from datetime import datetime, timedelta, date as date_cls
 from typing import Optional, List
 import pytz
@@ -190,7 +192,7 @@ def create_timezone() -> Timezone:
     return tz_component
 
 
-def generate_ics_content(events: List[dict]) -> str:
+def generate_ics_content(events: List[dict], stamp: Optional[datetime] = None) -> str:
     calendar = Calendar()
     calendar.add('prodid', '-//Notion Calendar Sync//MX//')
     calendar.add('version', '2.0')
@@ -245,7 +247,7 @@ def generate_ics_content(events: List[dict]) -> str:
             alarm.add('action', 'DISPLAY')
             alarm.add('description', event.get("summary") or "日程提醒")
             vevent.add_component(alarm)
-        now = datetime.now(pytz.UTC)
+        now = stamp or datetime.now(pytz.UTC)
         vevent.add('created', now)
         vevent.add('dtstamp', now)
         calendar.add_component(vevent)
@@ -274,7 +276,39 @@ async def main():
             if start_date <= event_start <= end_date:
                 filtered_events.append(event)
 
-    ics_content = generate_ics_content(filtered_events)
+    # ── 内容签名：日程没变就复用上次的 DTSTAMP/CREATED，避免无谓推送 ──
+    sig_rows = sorted(
+        (e["uid"], e["title"],
+         e["start"].isoformat() if e["start"] else "",
+         e["end"].isoformat() if e["end"] else "",
+         bool(e["is_all_day"]),
+         e.get("description", ""), e.get("people", ""),
+         e.get("location", ""), e.get("url", ""))
+        for e in filtered_events
+    )
+    signature = hashlib.sha256(
+        json.dumps(sig_rows, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+    sig_file = ".ics_signature"
+    stamp_file = ".ics_stamp"
+    stamp = None
+    try:
+        old_sig = open(sig_file, encoding="utf-8").read().strip()
+    except OSError:
+        old_sig = ""
+    if old_sig == signature:
+        try:
+            stamp = datetime.fromisoformat(open(stamp_file, encoding="utf-8").read().strip())
+            print(f"[{datetime.now()}] 内容未变，复用上次时间戳 {stamp.isoformat()}")
+        except Exception:
+            stamp = None
+    if stamp is None:
+        stamp = datetime.now(pytz.UTC)
+        open(stamp_file, "w", encoding="utf-8").write(stamp.isoformat())
+        open(sig_file, "w", encoding="utf-8").write(signature)
+
+    ics_content = generate_ics_content(filtered_events, stamp=stamp)
     output_file = "calendar.ics"
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(ics_content)
